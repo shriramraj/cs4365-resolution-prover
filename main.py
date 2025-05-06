@@ -3,6 +3,7 @@
 import sys
 
 def parse_clause(line):
+    # line = line.replace('¬', '~')
     literals = set(line.strip().split())
     return frozenset(literals) if literals else None
 
@@ -12,8 +13,13 @@ def resolve(ci, cj):
         comp = li[1:] if li.startswith('~') else '~' + li
         if comp in cj:
             new_clause = (ci - {li}) | (cj - {comp})
-            resolvents.append(frozenset(new_clause))
+            if not is_tautology(new_clause):
+                resolvents.append(frozenset(new_clause))
+                print(f"Resolving: {li} with {comp} -> {new_clause}")
     return resolvents
+
+def is_tautology(clause):
+    return any(lit[1:] if lit.startswith('~') else '~' + lit in clause for lit in clause)
 
 def main():
     if len(sys.argv) != 2:
@@ -36,10 +42,11 @@ def main():
     success = False
 
     # Read input
-    with open(input_file, 'r') as f:
+    with open(input_file, 'r', encoding='utf-8') as f:
         for line in f:
             if line.strip():
                 clause = parse_clause(line)
+                # print(f"Parsed clause: {clause}")
                 if clause and clause not in clause_set:
                     index = len(clauses)
                     clauses.append(clause)
@@ -48,12 +55,16 @@ def main():
                     index_map[clause] = index
 
     # Resolution loop
+    resolved_pairs = set()
     new = True
     while new:
         new = False
         n = len(clauses)
         for i in range(n):
             for j in range(i+1, n):
+                if (i, j) in resolved_pairs:
+                    continue
+                resolved_pairs.add((i,j))
                 resolvents = resolve(clauses[i], clauses[j])
                 for res in resolvents:
                     if not res:  # Empty clause found
@@ -70,13 +81,15 @@ def main():
                             f.write(f"Size of final clause set: {len(clauses)}")
                         return
                     
-                    if res not in clause_set:
+                    normalized_res = frozenset(sorted(res))
+                    if normalized_res not in clause_set:
                         new = True
                         index = len(clauses)
-                        clauses.append(res)
+                        clauses.append(normalized_res)
                         parents.append({i, j})
-                        clause_set.add(res)
-                        index_map[res] = index
+                        clause_set.add(normalized_res)
+                        index_map[normalized_res] = index
+
 
     # Failure case
     with open(output_file, 'w') as f:
@@ -85,3 +98,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
