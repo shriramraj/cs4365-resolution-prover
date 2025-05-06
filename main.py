@@ -1,101 +1,75 @@
-# main.py
-
 import sys
+import re
 
-def parse_clause(line):
-    # line = line.replace('¬', '~')
-    literals = set(line.strip().split())
-    return frozenset(literals) if literals else None
+def resolve(clauseA, clauseB, clauses_set):
+    clauseA_set = set(clauseA)
+    clauseB_set = set(clauseB)
+    for L in clauseA_set:
+        neg_L = '~' + L if L[0] != '~' else L[1:]
+        if neg_L in clauseB_set:
+            resolvent = (clauseA_set - {L}) | (clauseB_set - {neg_L})
+            if not resolvent:
+                return False  # empty clause, meaning a contradiction
+            if any(negated(r1, r2) for r1 in resolvent for r2 in resolvent if r1 < r2):
+                continue  # skip cases of tautologies (always true)
+            if resolvent in clauses_set:
+                continue  # skip any duplicates
+            return resolvent  # new resolvent
+    return True  # no resolvent found, meaning no contradiction
 
-def resolve(ci, cj):
-    resolvents = []
-    for li in ci:
-        comp = li[1:] if li.startswith('~') else '~' + li
-        if comp in cj:
-            new_clause = (ci - {li}) | (cj - {comp})
-            if not is_tautology(new_clause):
-                resolvents.append(frozenset(new_clause))
-                print(f"Resolving: {li} with {comp} -> {new_clause}")
-    return resolvents
-
-def is_tautology(clause):
-    return any(lit[1:] if lit.startswith('~') else '~' + lit in clause for lit in clause)
+def negated(lit1, lit2):
+    return lit1 == ('~' + lit2) or lit2 == ('~' + lit1)
 
 def main():
-    if len(sys.argv) != 2:
-        print("Usage: python3 main.py inputfile")
-        return
-
-    input_file = sys.argv[1]
-    
-    # Determine output filename
-    if '.' in input_file:
-        base_name = input_file.rsplit('.', 1)[0]
-        output_file = base_name + '.out'
-    else:
-        output_file = input_file + '.out'
-
     clauses = []
-    parents = []
-    clause_set = set()
-    index_map = {}
-    success = False
-
-    # Read input
-    with open(input_file, 'r', encoding='utf-8') as f:
-        for line in f:
-            if line.strip():
-                clause = parse_clause(line)
-                # print(f"Parsed clause: {clause}")
-                if clause and clause not in clause_set:
-                    index = len(clauses)
-                    clauses.append(clause)
-                    parents.append(set())
-                    clause_set.add(clause)
-                    index_map[clause] = index
-
-    # Resolution loop
-    resolved_pairs = set()
-    new = True
-    while new:
-        new = False
-        n = len(clauses)
-        for i in range(n):
-            for j in range(i+1, n):
-                if (i, j) in resolved_pairs:
-                    continue
-                resolved_pairs.add((i,j))
-                resolvents = resolve(clauses[i], clauses[j])
-                for res in resolvents:
-                    if not res:  # Empty clause found
-                        clauses.append(res)
-                        parents.append({i, j})
-                        success = True
-                        
-                        # Write to output file
-                        with open(output_file, 'w') as f:
-                            for idx, clause in enumerate(clauses):
-                                parent_str = "{" + ",".join(str(p+1) for p in parents[idx]) + "}" if parents[idx] else "{}"
-                                literals = " ".join(sorted(clause)) if clause else "False"
-                                f.write(f"{idx+1}. {literals} {parent_str}\n")
-                            f.write(f"Size of final clause set: {len(clauses)}")
-                        return
-                    
-                    normalized_res = frozenset(sorted(res))
-                    if normalized_res not in clause_set:
-                        new = True
-                        index = len(clauses)
-                        clauses.append(normalized_res)
-                        parents.append({i, j})
-                        clause_set.add(normalized_res)
-                        index_map[normalized_res] = index
-
-
-    # Failure case
-    with open(output_file, 'w') as f:
-        f.write("Failure\n")
-        f.write(f"Size of final clause set: {len(clauses)}")
+    clauseNum = 1
+    
+    with open(sys.argv[1], 'r', errors='ignore') as input_file:
+        clauses = [line.strip().split() for line in input_file if line.strip()]
+    
+    if not clauses:
+        print("Empty input")
+        sys.exit(1)
+    
+    # Last clause is the one to prove (negated for resolution proof)
+    toProve = clauses.pop(-1)
+    
+    # Print initial clauses
+    for cl in clauses:
+        print(f"{clauseNum}. {' '.join(cl)} {{}}")
+        clauseNum += 1
+    
+    # Negate the clause to prove
+    toProve = [re.sub(r'~', '', c) if '~' in c else '~' + c for c in toProve]
+    
+    # Add negated literals as unit clauses
+    for c in toProve:
+        clauses.append([c])
+        print(f"{clauseNum}. {c} {{}}")
+        clauseNum += 1
+    
+    # Clause sets for efficient lookup
+    clauses_set = {frozenset(cl) for cl in clauses}
+    clauses = [set(cl) for cl in clauses]
+    
+    # Main resolver loop
+    i = 0
+    while i < len(clauses):
+        for j in range(i):
+            result = resolve(clauses[i], clauses[j], clauses_set)
+            if result is False:
+                print(f"{clauseNum}. Contradiction {{{i+1}, {j+1}}}")
+                print("Valid")
+                sys.exit(0)
+            elif result is True:
+                continue
+            else:
+                result = list(result)
+                print(f"{clauseNum}. {' '.join(result)} {{{i+1}, {j+1}}}")
+                clauseNum += 1
+                clauses.append(result)
+                clauses_set.add(frozenset(result))
+        i += 1
 
 if __name__ == "__main__":
     main()
-
